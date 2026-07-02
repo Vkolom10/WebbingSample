@@ -153,6 +153,26 @@
   .group-badge { display:inline-flex; align-items:center; gap:4px; margin-top:6px; padding:3px 7px; border-radius:999px; background:rgba(59,91,253,.08); color:rgba(59,91,253,.75); font-size:10px; font-weight:800; letter-spacing:.2px; text-transform:uppercase; }
   .catalog-fab { background: var(--accent2); box-shadow: 0 6px 18px rgba(224,121,44,.4); }
   .catalog-fab:hover { background: var(--accent2-hover); }
+
+  /* Card 3-dot menu button (on swatch/group grid cards) */
+  .swatch-card { position: relative; }
+  .card-menu-btn { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(20,20,30,.45); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; backdrop-filter: blur(2px); transition: background .15s; }
+  .card-menu-btn:hover { background: rgba(20,20,30,.65); }
+  .card-menu-btn i { font-size: 16px; }
+
+  /* Action menu (View / Edit / Delete) */
+  .action-menu-btn { width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; padding: 13px 6px; border: none; background: none; font-size: 15px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; border-bottom: 1px solid var(--border); }
+  .action-menu-btn:last-child { border-bottom: none; }
+  .action-menu-btn i { font-size: 18px; color: var(--text2); width: 20px; }
+  .action-menu-btn.danger { color: var(--danger); }
+  .action-menu-btn.danger i { color: var(--danger); }
+  .action-menu-btn.cancel { color: var(--text2); justify-content: center; padding-top: 14px; }
+  .action-menu-btn.cancel i { display: none; }
+
+  /* Lightbox */
+  .lightbox-overlay { position: fixed; inset: 0; background: rgba(10,10,14,.92); display: none; align-items: center; justify-content: center; z-index: 80; padding: 24px; }
+  .lightbox-overlay.active { display: flex; }
+  .lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 12px; object-fit: contain; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 </style>
 </head>
 <body>
@@ -372,10 +392,37 @@ function savePhotoToDrive_(base64Data, uid) {
     var blob = Utilities.newBlob(bytes, match[1], (uid || 'photo') + '.jpg');
     var file = getPhotoFolder_().createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return 'https://drive.google.com/uc?export=view&id=' + file.getId();
+    return 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1000';
   } catch (err) {
     return '';
   }
+}
+
+// One-time repair: run this manually from the Apps Script editor (select
+// fixOldPhotoUrls_ in the toolbar dropdown and click Run) to convert any
+// old "uc?export=view" links already saved in your sheets to the new
+// reliable thumbnail format. Safe to run more than once.
+function fixOldPhotoUrls_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ['Samples', 'Webbing Colors', 'Webbing Groups'].forEach(function(name) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    var range = sheet.getDataRange();
+    var values = range.getValues();
+    var changed = false;
+    for (var i = 1; i < values.length; i++) {
+      var lastCol = values[i].length - 1;
+      var url = values[i][lastCol];
+      if (typeof url === 'string' && url.indexOf('drive.google.com/uc?export=view') !== -1) {
+        var m = url.match(/id=([^&]+)/);
+        if (m) {
+          values[i][lastCol] = 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1000';
+          changed = true;
+        }
+      }
+    }
+    if (changed) range.setValues(values);
+  });
 }
 
 function getPhotoFolder_() {
@@ -468,6 +515,22 @@ function output_(data) {
   </div>
 </div>
 
+<!-- Action menu: opened via the 3-dot button on a card -->
+<div class="modal-overlay" id="actionMenuOverlay">
+  <div class="modal" style="padding-bottom:14px">
+    <div class="modal-handle"></div>
+    <button class="action-menu-btn" id="actionMenuViewBtn" onclick="actionMenuView()"><i class="ti ti-photo"></i>View photo</button>
+    <button class="action-menu-btn" onclick="actionMenuEdit()"><i class="ti ti-edit"></i>Edit</button>
+    <button class="action-menu-btn danger" onclick="actionMenuDelete()"><i class="ti ti-trash"></i>Delete</button>
+    <button class="action-menu-btn cancel" onclick="closeActionMenu()">Cancel</button>
+  </div>
+</div>
+
+<!-- Fullscreen photo viewer: opened via double-click/double-tap on a card -->
+<div class="lightbox-overlay" id="lightboxOverlay" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt=""/>
+</div>
+
 <script>
 let customers = JSON.parse(localStorage.getItem('cust_tracker') || '[]');
 const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwo_FnvHFkrg9P7623ZwEbpJPSGJ0_PWciwU5reAuIi7lV7SPGaQ4FvDR4N9DzKi53H/exec';
@@ -492,6 +555,59 @@ function initials(name) {
 function fmtDate(ts) {
   const d = new Date(ts);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ── Double confirm (used for delete + clearing a photo) ────────────────────
+function doubleConfirm(msg1, msg2) {
+  if(!confirm(msg1)) return false;
+  return confirm(msg2);
+}
+
+// ── Fullscreen photo viewer (double-click / double-tap a card) ─────────────
+function openLightbox(src) {
+  if(!src) return;
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightboxOverlay').classList.add('active');
+}
+function closeLightbox() {
+  document.getElementById('lightboxOverlay').classList.remove('active');
+  document.getElementById('lightboxImg').src = '';
+}
+
+// ── Card action menu (3-dot button: View / Edit / Delete) ──────────────────
+let actionMenuTarget = null;
+function openActionMenu(kind, id) {
+  const store = kind === 'customer' ? customers : kind === 'swatch' ? swatches : webbingGroups;
+  const item = store.find(x => x.id === id);
+  if(!item) return;
+  actionMenuTarget = { kind, id, photo: item.photo || '' };
+  document.getElementById('actionMenuViewBtn').style.display = item.photo ? 'flex' : 'none';
+  document.getElementById('actionMenuOverlay').classList.add('active');
+}
+function closeActionMenu() {
+  document.getElementById('actionMenuOverlay').classList.remove('active');
+  actionMenuTarget = null;
+}
+function actionMenuView() {
+  if(!actionMenuTarget) return;
+  openLightbox(actionMenuTarget.photo);
+  closeActionMenu();
+}
+function actionMenuEdit() {
+  if(!actionMenuTarget) return;
+  const { kind, id } = actionMenuTarget;
+  closeActionMenu();
+  if(kind === 'customer') openEditModal(id);
+  else if(kind === 'swatch') openSwatchModal(id);
+  else if(kind === 'group') openGroupModal(id);
+}
+function actionMenuDelete() {
+  if(!actionMenuTarget) return;
+  const { kind, id } = actionMenuTarget;
+  closeActionMenu();
+  if(kind === 'customer') removeCustomer(id);
+  else if(kind === 'swatch') deleteSwatch(id);
+  else if(kind === 'group') deleteGroup(id);
 }
 
 function compressImageFile(file, maxSize = 520, quality = 0.42) {
@@ -531,12 +647,16 @@ async function handleFile(input) {
     console.error(e);
   }
 }
-function clearPhoto() {
+function resetPhotoState() {
   photoB64 = null;
   document.getElementById('previewImg').style.display = 'none';
   document.getElementById('photoZone').classList.remove('has-img');
   document.getElementById('cameraIn').value = '';
   document.getElementById('galleryIn').value = '';
+}
+function clearPhoto() {
+  if(photoB64 && !doubleConfirm('Remove this photo?', 'Are you sure? This photo will be cleared.')) return;
+  resetPhotoState();
 }
 
 function renderList() {
@@ -552,7 +672,7 @@ function renderList() {
     return;
   }
   list.innerHTML = filtered.slice().reverse().map(c => `
-    <div class="cust-card" onclick="openEditModal(${c.id})">
+    <div class="cust-card" ondblclick="openLightbox('${c.photo||''}')">
       <div class="cust-avatar">${c.photo ? `<img src="${c.photo}" alt="${c.name}"/>` : initials(c.name)}</div>
       <div class="cust-body">
         <div class="cust-name">${c.name}</div>
@@ -560,7 +680,7 @@ function renderList() {
         <div class="cust-date">${fmtDate(c.createdAt)}</div>
       </div>
       <div class="cust-actions">
-        <button class="icon-btn-sm" onclick="event.stopPropagation();removeCustomer(${c.id})"><i class="ti ti-trash"></i></button>
+        <button class="icon-btn-sm" onclick="openActionMenu('customer', ${c.id})"><i class="ti ti-dots-vertical"></i></button>
       </div>
     </div>`).join('');
 }
@@ -570,7 +690,7 @@ function openAddModal() {
   document.getElementById('modalTitle').textContent = 'New customer';
   document.getElementById('nameIn').value = '';
   document.getElementById('noteIn').value = '';
-  clearPhoto();
+  resetPhotoState();
   document.getElementById('modalOverlay').classList.add('active');
   setTimeout(()=>document.getElementById('nameIn').focus(), 100);
 }
@@ -582,7 +702,7 @@ function openEditModal(id) {
   document.getElementById('modalTitle').textContent = 'Edit customer';
   document.getElementById('nameIn').value = c.name;
   document.getElementById('noteIn').value = c.note || '';
-  clearPhoto();
+  resetPhotoState();
   if(c.photo) {
     photoB64 = c.photo;
     const img = document.getElementById('previewImg');
@@ -617,7 +737,7 @@ async function saveCustomer() {
 }
 
 function removeCustomer(id) {
-  if(!confirm('Remove this customer?')) return;
+  if(!doubleConfirm('Remove this customer?', 'This cannot be undone. Delete permanently?')) return;
   const c = customers.find(x=>x.id===id);
   customers = customers.filter(c=>c.id!==id);
   save();
@@ -896,7 +1016,8 @@ function renderSwatchGrid() {
       return;
     }
     grid.innerHTML = webbingGroups.slice().reverse().map(g => `
-      <div class="swatch-card" onclick="openGroupModal(${g.id})">
+      <div class="swatch-card" ondblclick="openLightbox('${g.photo||''}')">
+        <button class="card-menu-btn" onclick="event.stopPropagation();openActionMenu('group', ${g.id})"><i class="ti ti-dots-vertical"></i></button>
         <div class="swatch-photo">${g.photo ? `<img src="${g.photo}" alt="${g.name}"/>` : '<i class="ti ti-folders"></i>'}</div>
         <div class="swatch-info">
           <div class="swatch-name">${g.name}</div>
@@ -919,7 +1040,8 @@ function renderSwatchGrid() {
   }
 
   grid.innerHTML = filtered.slice().reverse().map(s => `
-    <div class="swatch-card" onclick="openSwatchModal(${s.id})">
+    <div class="swatch-card" ondblclick="openLightbox('${s.photo||''}')">
+      <button class="card-menu-btn" onclick="event.stopPropagation();openActionMenu('swatch', ${s.id})"><i class="ti ti-dots-vertical"></i></button>
       <div class="swatch-photo">${s.photo ? `<img src="${s.photo}" alt="${s.name}"/>` : '<i class="ti ti-photo"></i>'}</div>
       <div class="swatch-info">
         <div class="swatch-name">${s.name}</div>
@@ -941,17 +1063,21 @@ async function handleSwatchFile(input) {
     console.error(e);
   }
 }
-function clearSwatchPhoto() {
+function resetSwatchPhotoState() {
   swatchPhotoB64 = null;
   document.getElementById('swatchPreviewImg').style.display = 'none';
   document.getElementById('swatchPhotoZone').classList.remove('has-img');
   document.getElementById('swatchCameraIn').value = '';
   document.getElementById('swatchGalleryIn').value = '';
 }
+function clearSwatchPhoto() {
+  if(swatchPhotoB64 && !doubleConfirm('Remove this photo?', 'Are you sure? This photo will be cleared.')) return;
+  resetSwatchPhotoState();
+}
 
 function openSwatchModal(id) {
   editingSwatchId = id || null;
-  clearSwatchPhoto();
+  resetSwatchPhotoState();
   if(id) {
     const s = swatches.find(x=>x.id===id);
     document.getElementById('swatchModalTitle').textContent = 'Edit webbing color';
@@ -1013,10 +1139,11 @@ function saveSwatch() {
   if(sheetsUrl) pushSwatchToSheets(swatch, action);
 }
 
-function deleteSwatch() {
-  if(!confirm('Delete this webbing color?')) return;
-  const swatch = swatches.find(s=>s.id===editingSwatchId);
-  swatches = swatches.filter(s=>s.id!==editingSwatchId);
+function deleteSwatch(id) {
+  const targetId = id || editingSwatchId;
+  if(!doubleConfirm('Delete this webbing color?', 'This cannot be undone. Delete permanently?')) return;
+  const swatch = swatches.find(s=>s.id===targetId);
+  swatches = swatches.filter(s=>s.id!==targetId);
   saveSwatches();
   closeSwatchModal();
   renderSwatchGrid();
@@ -1040,16 +1167,20 @@ async function handleGroupFile(input) {
     console.error(e);
   }
 }
-function clearGroupPhoto() {
+function resetGroupPhotoState() {
   groupPhotoB64 = null;
   document.getElementById('groupPreviewImg').style.display = 'none';
   document.getElementById('groupPhotoZone').classList.remove('has-img');
   document.getElementById('groupCameraIn').value = '';
   document.getElementById('groupGalleryIn').value = '';
 }
+function clearGroupPhoto() {
+  if(groupPhotoB64 && !doubleConfirm('Remove this photo?', 'Are you sure? This photo will be cleared.')) return;
+  resetGroupPhotoState();
+}
 function openGroupModal(id) {
   editingGroupId = id || null;
-  clearGroupPhoto();
+  resetGroupPhotoState();
   if(id) {
     const g = webbingGroups.find(x=>x.id===id);
     document.getElementById('groupModalTitle').textContent = 'Edit webbing group';
@@ -1104,10 +1235,11 @@ function saveGroup() {
   setSwatchFilter('group');
   if(sheetsUrl) pushGroupToSheets(group, action);
 }
-function deleteGroup() {
-  if(!confirm('Delete this webbing group?')) return;
-  const group = webbingGroups.find(g=>g.id===editingGroupId);
-  webbingGroups = webbingGroups.filter(g=>g.id!==editingGroupId);
+function deleteGroup(id) {
+  const targetId = id || editingGroupId;
+  if(!doubleConfirm('Delete this webbing group?', 'This cannot be undone. Delete permanently?')) return;
+  const group = webbingGroups.find(g=>g.id===targetId);
+  webbingGroups = webbingGroups.filter(g=>g.id!==targetId);
   saveGroups();
   closeGroupModal();
   renderSwatchGrid();
