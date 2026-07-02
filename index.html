@@ -566,12 +566,43 @@ function doubleConfirm(msg1, msg2) {
 // ── Fullscreen photo viewer (double-click / double-tap a card) ─────────────
 function openLightbox(src) {
   if(!src) return;
-  document.getElementById('lightboxImg').src = src;
+  const img = document.getElementById('lightboxImg');
+  img.onerror = function() {
+    document.getElementById('lightboxOverlay').classList.add('active');
+    img.style.display = 'none';
+    let msg = document.getElementById('lightboxErrMsg');
+    if(!msg) {
+      msg = document.createElement('div');
+      msg.id = 'lightboxErrMsg';
+      msg.style.cssText = 'color:#fff;font-size:14px;text-align:center;padding:20px';
+      document.getElementById('lightboxOverlay').appendChild(msg);
+    }
+    msg.textContent = 'Photo failed to load from Google Drive.';
+  };
+  img.onload = function() {
+    img.style.display = 'block';
+    const msg = document.getElementById('lightboxErrMsg');
+    if(msg) msg.remove();
+  };
+  img.src = src;
   document.getElementById('lightboxOverlay').classList.add('active');
 }
 function closeLightbox() {
   document.getElementById('lightboxOverlay').classList.remove('active');
   document.getElementById('lightboxImg').src = '';
+  const msg = document.getElementById('lightboxErrMsg');
+  if(msg) msg.remove();
+}
+
+// ── Graceful fallback if a synced photo URL fails to load ──────────────────
+function handleImgError(img) {
+  const parent = img.parentElement;
+  if(!parent) return;
+  if(img.dataset.fallbackInitials !== undefined) {
+    parent.textContent = img.dataset.fallbackInitials;
+  } else if(img.dataset.fallbackIcon) {
+    parent.innerHTML = '<i class="ti ' + img.dataset.fallbackIcon + '"></i>';
+  }
 }
 
 // ── Card action menu (3-dot button: View / Edit / Delete) ──────────────────
@@ -673,7 +704,7 @@ function renderList() {
   }
   list.innerHTML = filtered.slice().reverse().map(c => `
     <div class="cust-card" ondblclick="openLightbox('${c.photo||''}')">
-      <div class="cust-avatar">${c.photo ? `<img src="${c.photo}" alt="${c.name}"/>` : initials(c.name)}</div>
+      <div class="cust-avatar">${c.photo ? `<img src="${c.photo}" alt="${c.name}" data-fallback-initials="${initials(c.name)}" onerror="handleImgError(this)"/>` : initials(c.name)}</div>
       <div class="cust-body">
         <div class="cust-name">${c.name}</div>
         ${c.note ? `<div class="cust-note">${c.note}</div>` : ''}
@@ -875,7 +906,7 @@ function mergeFromSheets(data) {
         existing.name = row.name || '';
         existing.note = row.note || '';
         existing.photoUrl = photo || existing.photoUrl || '';
-        if(photo) existing.photo = photo;
+        if(photo && !existing.photo) existing.photo = photo;
         changed = true;
       }
     } else {
@@ -910,7 +941,7 @@ function mergeFromSheets(data) {
         existing.number = row.number || '';
         existing.type = type;
         existing.photoUrl = photo || existing.photoUrl || '';
-        if(photo) existing.photo = photo;
+        if(photo && !existing.photo) existing.photo = photo;
         swatchChanged = true;
       }
     } else {
@@ -944,7 +975,7 @@ function mergeFromSheets(data) {
         existing.name = row.name || '';
         existing.note = row.note || '';
         existing.photoUrl = photo || existing.photoUrl || '';
-        if(photo) existing.photo = photo;
+        if(photo && !existing.photo) existing.photo = photo;
         groupChanged = true;
       }
     } else {
@@ -1018,7 +1049,7 @@ function renderSwatchGrid() {
     grid.innerHTML = webbingGroups.slice().reverse().map(g => `
       <div class="swatch-card" ondblclick="openLightbox('${g.photo||''}')">
         <button class="card-menu-btn" onclick="event.stopPropagation();openActionMenu('group', ${g.id})"><i class="ti ti-dots-vertical"></i></button>
-        <div class="swatch-photo">${g.photo ? `<img src="${g.photo}" alt="${g.name}"/>` : '<i class="ti ti-folders"></i>'}</div>
+        <div class="swatch-photo">${g.photo ? `<img src="${g.photo}" alt="${g.name}" data-fallback-icon="ti-folders" onerror="handleImgError(this)"/>` : '<i class="ti ti-folders"></i>'}</div>
         <div class="swatch-info">
           <div class="swatch-name">${g.name}</div>
           ${g.note ? `<div class="group-note">${g.note}</div>` : ''}
@@ -1042,7 +1073,7 @@ function renderSwatchGrid() {
   grid.innerHTML = filtered.slice().reverse().map(s => `
     <div class="swatch-card" ondblclick="openLightbox('${s.photo||''}')">
       <button class="card-menu-btn" onclick="event.stopPropagation();openActionMenu('swatch', ${s.id})"><i class="ti ti-dots-vertical"></i></button>
-      <div class="swatch-photo">${s.photo ? `<img src="${s.photo}" alt="${s.name}"/>` : '<i class="ti ti-photo"></i>'}</div>
+      <div class="swatch-photo">${s.photo ? `<img src="${s.photo}" alt="${s.name}" data-fallback-icon="ti-photo" onerror="handleImgError(this)"/>` : '<i class="ti ti-photo"></i>'}</div>
       <div class="swatch-info">
         <div class="swatch-name">${s.name}</div>
         <div class="swatch-num">${s.number || '—'}</div>
