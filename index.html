@@ -494,7 +494,7 @@ function fmtDate(ts) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function compressImageFile(file, maxSize = 700, quality = 0.55) {
+function compressImageFile(file, maxSize = 520, quality = 0.42) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -654,63 +654,74 @@ function updateSyncBanner() {
     b.innerHTML = '<i class="ti ti-cloud-off"></i><span id="syncText">Not synced to Google Sheets — tap to connect</span>';
   }
 }
-async function pushToSheets(cust, action) {
+async function postToSheets(payload) {
   try {
     await fetch(sheetsUrl, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action,
-        type: 'sample',
-        name: cust.name,
-        note: cust.note,
-        date: fmtDate(cust.createdAt),
-        uid: cust.uid,
-        photoBase64: cust.photo || '',
-        photoUrl: cust.photoUrl || ''
-      })
+      body: JSON.stringify(payload)
     });
-  } catch(e) { console.error('Sheets push failed', e); }
+  } catch(e) {
+    console.error('Sheets push failed', e);
+  }
+}
+
+async function pushToSheets(cust, action) {
+  const basePayload = {
+    action,
+    type: 'sample',
+    name: cust.name,
+    note: cust.note,
+    date: fmtDate(cust.createdAt),
+    uid: cust.uid,
+    photoBase64: '',
+    photoUrl: cust.photoUrl || ''
+  };
+
+  // Important: save the text row first. Photo upload is sent second so a big/failed photo cannot block the row.
+  await postToSheets(basePayload);
+
+  if(action !== 'delete' && cust.photo && String(cust.photo).startsWith('data:image/')) {
+    await postToSheets({ ...basePayload, action: 'update', photoBase64: cust.photo });
+  }
 }
 
 async function pushSwatchToSheets(swatch, action) {
-  try {
-    await fetch(sheetsUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action,
-        type: 'swatch',
-        name: swatch.name,
-        number: swatch.number || '',
-        webbingType: swatch.type || 'solid',
-        uid: swatch.uid,
-        photoBase64: swatch.photo || '',
-        photoUrl: swatch.photoUrl || ''
-      })
-    });
-  } catch(e) { console.error('Swatch Sheets push failed', e); }
+  const basePayload = {
+    action,
+    type: 'swatch',
+    name: swatch.name,
+    number: swatch.number || '',
+    webbingType: swatch.type || 'solid',
+    uid: swatch.uid,
+    photoBase64: '',
+    photoUrl: swatch.photoUrl || ''
+  };
+
+  await postToSheets(basePayload);
+
+  if(action !== 'delete' && swatch.photo && String(swatch.photo).startsWith('data:image/')) {
+    await postToSheets({ ...basePayload, action: 'update', photoBase64: swatch.photo });
+  }
 }
 
 async function pushGroupToSheets(group, action) {
-  try {
-    await fetch(sheetsUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action,
-        type: 'group',
-        name: group.name,
-        note: group.note || '',
-        uid: group.uid,
-        photoBase64: group.photo || '',
-        photoUrl: group.photoUrl || ''
-      })
-    });
-  } catch(e) { console.error('Group Sheets push failed', e); }
+  const basePayload = {
+    action,
+    type: 'group',
+    name: group.name,
+    note: group.note || '',
+    uid: group.uid,
+    photoBase64: '',
+    photoUrl: group.photoUrl || ''
+  };
+
+  await postToSheets(basePayload);
+
+  if(action !== 'delete' && group.photo && String(group.photo).startsWith('data:image/')) {
+    await postToSheets({ ...basePayload, action: 'update', photoBase64: group.photo });
+  }
 }
 
 function pullFromSheets() {
