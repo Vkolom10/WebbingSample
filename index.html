@@ -470,7 +470,9 @@ function output_(data) {
 
 <script>
 let customers = JSON.parse(localStorage.getItem('cust_tracker') || '[]');
-let sheetsUrl = localStorage.getItem('cust_sheets_url') || '';
+const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzJvGO_kj6-UrKTM5jfTR46DGIpQsqUpml0_Qr0MSdA2eYS5SFGPBXbTw3RAKnJj6TA/exec';
+let sheetsUrl = localStorage.getItem('cust_sheets_url') || DEFAULT_SHEETS_URL;
+if (!localStorage.getItem('cust_sheets_url')) localStorage.setItem('cust_sheets_url', DEFAULT_SHEETS_URL);
 let editingId = null;
 let photoB64 = null;
 
