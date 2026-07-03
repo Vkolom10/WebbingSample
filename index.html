@@ -182,9 +182,13 @@
   .sample-detail-panel img { width: 58px; height: 58px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); background: var(--surface2); }
   .sample-detail-name { font-size: 14px; font-weight: 800; line-height: 1.25; }
   .sample-detail-note { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.45; white-space: pre-wrap; }
-  .copy-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+  .copy-row { display: flex; justify-content: flex-end; gap: 7px; margin-top: 9px; }
   .copy-btn { border: 1px solid var(--border); background: var(--surface2); color: var(--text2); border-radius: 9px; padding: 7px 9px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; }
   .copy-btn.copied { background: #e8f8ef; color: #168044; border-color: #bce8cf; }
+  .sample-detail-panel .copy-row { justify-content: flex-end; }
+  .swatch-card { position: relative; padding-bottom: 28px; }
+  .swatch-copy-btn { position: absolute; right: 8px; bottom: 7px; display:flex; align-items:center; justify-content:center; gap:3px; padding: 4px 7px; font-size: 10px; line-height: 1; min-height: 22px; border-radius: 8px; }
+  .swatch-copy-btn i { font-size: 12px; }
   .field-warning { display: none; margin: -8px 0 12px; padding: 9px 10px; border-radius: 10px; background: var(--danger-bg); color: var(--danger); font-size: 12px; font-weight: 800; line-height: 1.35; }
   .field-warning.active { display: block; }
 
@@ -617,10 +621,29 @@ async function copyText(text, btn) {
     const old = btn.innerHTML;
     btn.innerHTML = '<i class="ti ti-check"></i> Copied';
     btn.classList.add('copied');
-    setTimeout(() => { btn.innerHTML = old; btn.classList.remove('copied'); }, 900);
+    setTimeout(() => { btn.innerHTML = old; btn.classList.remove('copied'); }, 5000);
   } catch(e) {
     alert('Copy failed. You can still select and copy the text manually.');
   }
+}
+function sampleCopyText(id) {
+  const c = customers.find(x => x.id === id);
+  if(!c) return '';
+  return [
+    'Name: ' + (c.name || ''),
+    'Address: ' + (c.address || ''),
+    'Notes: ' + (c.note || ''),
+    'Date: ' + fmtDate(c.createdAt)
+  ].join('\n');
+}
+function swatchCopyText(id) {
+  const s = swatches.find(x => x.id === id);
+  if(!s) return '';
+  return [
+    'Name: ' + (s.name || ''),
+    'Webbing #: ' + (s.number || ''),
+    'Panel: ' + swatchTypeLabel(s.type || 'solid')
+  ].join('\n');
 }
 function toggleSampleDetails(id) {
   const card = document.getElementById('cust-card-' + id);
@@ -807,9 +830,7 @@ function renderList() {
           <div class="sample-detail-note">${c.note ? safeNote : 'No notes'}</div>
           ${c.address ? `<div class="sample-detail-note"><strong>Address:</strong> ${safeAddress}</div>` : '<div class="sample-detail-note"><strong>Address:</strong> No address</div>'}
           <div class="copy-row">
-            <button class="copy-btn" onclick="event.stopPropagation();copyText(${JSON.stringify(c.name || '')}, this)"><i class="ti ti-copy"></i> Copy name</button>
-            <button class="copy-btn" onclick="event.stopPropagation();copyText(${JSON.stringify(c.note || '')}, this)"><i class="ti ti-copy"></i> Copy notes</button>
-            <button class="copy-btn" onclick="event.stopPropagation();copyText(${JSON.stringify(c.address || '')}, this)"><i class="ti ti-copy"></i> Copy address</button>
+            <button class="copy-btn" onclick="event.stopPropagation();copyText(sampleCopyText(${c.id}), this)"><i class="ti ti-copy"></i> Copy</button>
           </div>
         </div>
       </div>
@@ -1191,6 +1212,7 @@ function renderSwatchGrid() {
         <div class="swatch-name">${s.name}</div>
         <div class="swatch-num">${s.number || '—'}</div>
         <div class="swatch-type">${swatchTypeLabel(s.type || 'solid')}</div>
+        <button class="copy-btn swatch-copy-btn" onclick="event.stopPropagation();copyText(swatchCopyText(${s.id}), this)"><i class="ti ti-copy"></i> Copy</button>
       </div>
     </div>`).join('');
 }
